@@ -41,13 +41,13 @@ async function run() {
 
     // middleare
     const verifyToken = (req, res, next) => {
-      console.log("inside varify token ", req.headers);
+      console.log("inside varify token ", req.headers.authorization);
       if (!req.headers.authorization) {
         return res.status(401).send({ message: "forbidden authorization" });
       }
       const token = req.headers.authorization.split(" ")[1]; 
-      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
-        if (error) {
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
           return res.status(401).send({ message: "forbidden access" });
         }
         req.decoded = decoded;
@@ -55,6 +55,17 @@ async function run() {
       });
     };
 
+    const verifyAdmin = async (req, res, next) => {   
+      const email = req.decoded.email; 
+      const query = { email: email}; 
+      const user = await userCollection.findOne(query);  
+      const isAdmin = user?.role === "admin";  
+      if(!isAdmin){
+         return res.status(403).send({ message: "forbidden access"});   
+      }
+      next();    
+ }
+ 
   // user related api
      app.post("/users", async (req, res) => { 
        const user = req.body; 
@@ -67,19 +78,18 @@ async function run() {
        res.send(result);  
      })
 
-
-     app.get("/users", async (req, res) => { 
+     app.get("/users", verifyToken, async (req, res) => { 
         const result = await userCollection.find().toArray();  
         res.send(result);  
       }); 
   
-      app.get("/users/admin/:email", async (req, res) => { 
+      app.get("/users/admin/:email", verifyToken, verifyAdmin, async (req, res) => { 
         const email = req.params.email; 
         if(email !== req.decoded.email) { 
            return res.status(403).send({ message: "unauthorized access"}); 
         }
         const query = { email : email}; 
-        const user = await userCollecction.findOne(query);  
+        const user = await userCollection.findOne(query);  
         let admin = false; 
         if(user){
            admin = user?.role === "admin";  
@@ -87,6 +97,24 @@ async function run() {
         res.send({admin}); 
     })
 
+    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
+      res.send(result); 
+    });
+    
+    app.patch("/users/admin/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id; 
+      const filter = { _id: new ObjectId(id) };  
+      const updatedDoc = { 
+        $set: {
+          role: "admin", 
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
 
 // shop related api
 app.post("/shops", async (req, res) => { 
