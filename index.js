@@ -28,12 +28,13 @@ async function run() {
   
     const userCollection = client.db("TechBuddy").collection("users");
     const shopCollection = client.db("TechBuddy").collection("shops");
+    const productCollection = client.db("TechBuddy").collection("products"); 
 
     // jwt related api
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "1h", 
+    app.post("/jwt", async (req, res) => { 
+      const user = req.body; 
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { 
+        expiresIn: "1h",  
       });
       res.send({ token }); 
     });
@@ -69,14 +70,38 @@ async function run() {
 
      app.get("/users", async (req, res) => { 
         const result = await userCollection.find().toArray();  
-        res.send(result); 
+        res.send(result);  
       }); 
   
+      app.get("/users/admin/:email", async (req, res) => { 
+        const email = req.params.email; 
+        if(email !== req.decoded.email) { 
+           return res.status(403).send({ message: "unauthorized access"}); 
+        }
+        const query = { email : email}; 
+        const user = await userCollecction.findOne(query);  
+        let admin = false; 
+        if(user){
+           admin = user?.role === "admin";  
+        }
+        res.send({admin}); 
+    })
+
+
 // shop related api
 app.post("/shops", async (req, res) => { 
    const shop = req.body;  
    const result = await shopCollection.insertOne(shop);   
    res.send(result);   
+})
+
+
+// product related api 
+
+app.post("/products", async (req, res) => { 
+   const product = req.body;
+   const result = await productCollection.insertOne(product);
+   res.send(result); 
 })
 
 
