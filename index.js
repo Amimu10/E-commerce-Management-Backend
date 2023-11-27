@@ -29,6 +29,7 @@ async function run() {
     const userCollection = client.db("TechBuddy").collection("users");
     const shopCollection = client.db("TechBuddy").collection("shops");
     const productCollection = client.db("TechBuddy").collection("products"); 
+    const cartCollection = client.db("TechBuddy").collection("carts"); 
 
     // jwt related api
     app.post("/jwt", async (req, res) => { 
@@ -50,7 +51,7 @@ async function run() {
         if (err) {
           return res.status(401).send({ message: "forbidden access" });
         }
-        req.decoded = decoded;
+        req.decoded = decoded; 
         next();
       });
     };
@@ -61,6 +62,17 @@ async function run() {
       const user = await userCollection.findOne(query);  
       const isAdmin = user?.role === "admin";  
       if(!isAdmin){
+         return res.status(403).send({ message: "forbidden access"});   
+      }
+      next();    
+ }
+
+    const verifyManager = async (req, res, next) => {   
+      const email = req.decoded.email; 
+      const query = { email: email}; 
+      const user = await userCollection.findOne(query);  
+      const isManager = user?.role === "manager";  
+      if(!isManager){ 
          return res.status(403).send({ message: "forbidden access"});   
       }
       next();    
@@ -83,7 +95,7 @@ async function run() {
         res.send(result);  
       }); 
   
-      app.get("/users/admin/:email", verifyToken, verifyAdmin, async (req, res) => { 
+      app.get("/users/admin/:email", verifyToken, async (req, res) => { 
         const email = req.params.email; 
         if(email !== req.decoded.email) { 
            return res.status(403).send({ message: "unauthorized access"}); 
@@ -97,14 +109,29 @@ async function run() {
         res.send({admin}); 
     })
 
-    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+      app.get("/users/manager/:email", verifyToken, verifyManager, async (req, res) => { 
+        const email = req.params.email; 
+        if(email !== req.decoded.email) { 
+           return res.status(403).send({ message: "unauthorized access"}); 
+        }
+        const query = { email : email}; 
+        const user = await userCollection.findOne(query);  
+        let manager = false; 
+        if(user){
+           manager = user?.role === "manager";  
+        }
+        res.send({manager}); 
+    })
+
+    app.delete("/users/:id", verifyToken,  async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
       res.send(result); 
     });
     
-    app.patch("/users/admin/:id", verifyToken, verifyAdmin, async (req, res) => {
+    
+    app.patch("/users/admin/:id", verifyToken, async (req, res) => {
       const id = req.params.id; 
       const filter = { _id: new ObjectId(id) };  
       const updatedDoc = { 
@@ -116,21 +143,115 @@ async function run() {
       res.send(result);
     });
 
+
+    app.patch("/users/manager/:id", verifyToken, verifyManager, async (req, res) => {
+      const id = req.params.id; 
+      const filter = { _id: new ObjectId(id) };  
+      const updatedDoc = { 
+        $set: {
+          role: "manager", 
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+
+
 // shop related api
 app.post("/shops", async (req, res) => { 
    const shop = req.body;  
-   const result = await shopCollection.insertOne(shop);   
+   const result = await shopCollection.insertOne(shop);    
    res.send(result);   
 })
 
+app.get("/shops", async (req, res) => {
+  const result = await shopCollection.find().toArray();
+  res.send(result); 
+});  
 
-// product related api 
+app.get("/shops/:id", async (req, res) => {
+    const id = req.params.id; 
+    const query = { _id: new ObjectId(id) };
+    const result = await shopCollection.findOne(query); 
+    res.send(result); 
+})
+
 
 app.post("/products", async (req, res) => { 
    const product = req.body;
-   const result = await productCollection.insertOne(product);
+   const result = await productCollection.insertOne(product); 
    res.send(result); 
 })
+
+
+app.get("/products", async (req, res) => {
+  const result = await productCollection.find().toArray(); 
+  res.send(result); 
+});  
+
+app.get("/products/:id", verifyToken, async (req, res) => { 
+  const id = req.params.id; 
+  const query = { _id: new ObjectId(id) };
+  const result = await productCollection.findOne(query);  
+  res.send(result); 
+})
+
+app.patch("/products/:id", async (req, res) => {
+  const item = req.body; 
+  const id = req.params.id;
+  const filter = { _id: new ObjectId(id) };
+  const updatedDoc = {
+    $set: {
+      product_name: item.product_name, 
+      product_price: item.product_price,
+      product_image: item.product_image, 
+      product_location: item.product_location,
+      product_quantity: item.product_quantity,
+      product_category: item.product_category,   
+      production_cost: item.production_cost, 
+      product_added_date: item.product_added_date, 
+      profit_margin: item.profit_margin,
+      discount: item.discount,
+      description: item.description
+    }
+  }
+  const result = await productCollection.updateOne(filter, updatedDoc);
+  res.send(result); 
+})
+
+
+app.delete("/products/:id", verifyToken, async (req, res) => {
+const id = req.params.id; 
+console.log(id);
+const query = { _id: new ObjectId(id) };
+const result = await productCollection.deleteOne(query); 
+console.log(result);
+res.send(result); 
+})
+
+// cart related api 
+app.post("/carts", async (req, res) => {
+  const cartItem = req.body; 
+  const result = await cartCollection.insertOne(cartItem);
+  res.send(result);
+});
+
+app.get("/carts", async (req, res) => {
+  const email = req.query.email;
+  const query = { email: email };
+  const result = await cartCollection.find(query).toArray();
+  res.send(result);
+});
+
+app.delete("/carts/:id", async (req, res) => { 
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await cartCollection.deleteOne(query);
+  res.send(result);
+});
+
+
 
 
     // await client.connect();
