@@ -3,7 +3,7 @@ const app = express();
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
-// const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY); 
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY); 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 5000;
 
@@ -30,6 +30,8 @@ async function run() {
     const shopCollection = client.db("TechBuddy").collection("shops");
     const productCollection = client.db("TechBuddy").collection("products"); 
     const cartCollection = client.db("TechBuddy").collection("carts"); 
+    const subscriptionCollection = client.db("TechBuddy").collection("subscription");     
+    const paymentCollection = client.db("TechBuddy").collection("payments");     
 
     // jwt related api
     app.post("/jwt", async (req, res) => { 
@@ -90,21 +92,21 @@ async function run() {
        res.send(result);  
      })
 
-     app.get("/users", verifyToken, async (req, res) => { 
-        const result = await userCollection.find().toArray();  
-        res.send(result);  
+     app.get("/users", verifyToken, async (req, res) => {           
+        const result = await userCollection.find().toArray();               
+        res.send(result);   
       }); 
   
-      app.get("/users/admin/:email", verifyToken, async (req, res) => { 
-        const email = req.params.email; 
-        if(email !== req.decoded.email) { 
-           return res.status(403).send({ message: "unauthorized access"}); 
+      app.get("/users/admin/:email", verifyToken, async (req, res) => {          
+        const email = req.params.email;          
+        if(email !== req.decoded.email) {  
+           return res.status(403).send({ message: "unauthorized access"});  
         }
-        const query = { email : email}; 
-        const user = await userCollection.findOne(query);  
-        let admin = false; 
+        const query = { email : email};  
+        const user = await userCollection.findOne(query);    
+        let admin = false;  
         if(user){
-           admin = user?.role === "admin";  
+           admin = user?.role === "admin";   
         }
         res.send({admin}); 
     })
@@ -159,10 +161,10 @@ async function run() {
 
 
 // shop related api
-app.post("/shops", async (req, res) => { 
-   const shop = req.body;  
-   const result = await shopCollection.insertOne(shop);    
-   res.send(result);   
+app.post("/shops", async (req, res) => {    
+   const shop = req.body;         
+   const result = await shopCollection.insertOne(shop);       
+   res.send(result);       
 })
 
 app.get("/shops", async (req, res) => {
@@ -226,8 +228,8 @@ const id = req.params.id;
 console.log(id);
 const query = { _id: new ObjectId(id) };
 const result = await productCollection.deleteOne(query); 
-console.log(result);
-res.send(result); 
+console.log(result); 
+res.send(result);  
 })
 
 // cart related api 
@@ -240,16 +242,99 @@ app.post("/carts", async (req, res) => {
 app.get("/carts", async (req, res) => {
   const email = req.query.email;
   const query = { email: email };
-  const result = await cartCollection.find(query).toArray();
+  const result = await cartCollection.find(query).toArray();    
+  res.send(result);  
+});
+
+app.delete("/carts/:id", async (req, res) => {  
+  const id = req.params.id; 
+  const query = { _id: new ObjectId(id) };
+  const result = await cartCollection.deleteOne(query);
+  res.send(result); 
+});
+
+
+// subscription related api
+
+app.post("/subscription", async (req, res) => {  
+  const subscriptionItem = req.body;   
+  const result = await subscriptionCollection.insertOne(subscriptionItem);
   res.send(result);
 });
 
-app.delete("/carts/:id", async (req, res) => { 
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  const result = await cartCollection.deleteOne(query);
-  res.send(result);
-});
+// app.get("/carts", async (req, res) => { 
+//   const email = req.query.email; 
+//   const query = { email: email };   
+//   const result = await subscriptionCollection.find(query).toArray();    
+//   res.send(result);    
+// });
+
+app.get("/subscription", async (req, res) => {
+  try {
+    const email = req.query.email;
+    const query = { email: email };
+    const result = await subscriptionCollection.find(query).toArray();
+
+    // Assuming you have user data in a separate collection
+    const user = await userCollection.findOne({ email: email });
+
+    // Modify the result to include additional user information
+    const modifiedResult = result.map(subscription => ({
+      _id: subscription._id,     
+      plan: subscription.plan,    
+      price: subscription.price,
+      productLimit: subscription.productLimit,
+      subscriptionDate: subscription.subscriptionDate,
+      // Add additional user information
+      userName: user ? user.name : null,
+      userEmail: user ? user.email : null,
+    }));
+
+    res.send(modifiedResult);
+  } catch (error) {
+    console.error('Error fetching subscription details:', error);
+    res.status(500).send({ error: 'Internal Server Error' });
+  }
+}); 
+
+// payment related api 
+
+app.post("/create-payment-intent", async (req, res) => { 
+  const {price} = req.body; 
+  const amount = parseInt(price * 100); 
+  const paymentIntent = await stripe.paymentIntents.create({   
+     amount : amount,  
+     currency: "usd", 
+     payment_method_types: ["card"]    
+  });
+  res.send({
+    clientSecret: paymentIntent.client_secret
+
+  })
+})
+
+app.get("/payments/:email", verifyToken, async (req, res) => {
+   const query = {email : req.params.email} 
+   if(req.params.email !==req.decoded.email) {
+       return res.status(403).send({ message: "unauthorized access"}); 
+   } 
+   const result = await paymentCollection.find().toArray();     
+   res.send(result);  
+})
+
+
+app.post("/payments", async (req, res) => {
+  const payment = req.body; 
+  const paymentResult = await paymentCollection.insertOne(payment); 
+  const query = {_id : {
+     
+    $in : payment.cartIds.map(id => new ObjectId(id))  
+  }
+  }
+  const deleteResult = await paymentCollection.deleteMany(query); 
+  res.send({paymentResult, deleteResult}); 
+
+})
 
 
 
