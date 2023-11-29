@@ -32,6 +32,7 @@ async function run() {
     const cartCollection = client.db("TechBuddy").collection("carts"); 
     const subscriptionCollection = client.db("TechBuddy").collection("subscription");     
     const paymentCollection = client.db("TechBuddy").collection("payments");     
+    const customerPaymentCollection = client.db("TechBuddy").collection("customerPayments");     
 
     // jwt related api
     app.post("/jwt", async (req, res) => { 
@@ -78,6 +79,17 @@ async function run() {
          return res.status(403).send({ message: "forbidden access"});   
       }
       next();    
+
+ }
+    const verifyCustomer = async (req, res, next) => {   
+      const email = req.decoded.email; 
+      const query = { email: email}; 
+      const user = await userCollection.findOne(query);  
+      const isCustomer = user?.role === "customer";  
+      if(!isCustomer){ 
+         return res.status(403).send({ message: "forbidden access"});   
+      }
+      next();    
  }
  
   // user related api
@@ -99,9 +111,9 @@ async function run() {
   
       app.get("/users/admin/:email", verifyToken, async (req, res) => {          
         const email = req.params.email;          
-        if(email !== req.decoded.email) {  
-           return res.status(403).send({ message: "unauthorized access"});  
-        }
+        // if(email !== req.decoded.email) {  
+        //    return res.status(403).send({ message: "unauthorized access"});  
+        // }
         const query = { email : email};  
         const user = await userCollection.findOne(query);    
         let admin = false;  
@@ -111,18 +123,33 @@ async function run() {
         res.send({admin}); 
     })
 
-      app.get("/users/manager/:email", verifyToken, verifyManager, async (req, res) => { 
+      app.get("/users/manager/:email", verifyToken, async (req, res) => { 
         const email = req.params.email; 
-        if(email !== req.decoded.email) { 
-           return res.status(403).send({ message: "unauthorized access"}); 
-        }
+        // if(email !== req.decoded.email) { 
+        //    return res.status(403).send({ message: "unauthorized access"}); 
+        // }
         const query = { email : email}; 
         const user = await userCollection.findOne(query);  
         let manager = false; 
         if(user){
-           manager = user?.role === "manager";  
+           manager = user?.role === "manager";   
         }
-        res.send({manager}); 
+        res.send({manager});  
+    })
+
+
+      app.get("/users/customer/:email", verifyToken, async (req, res) => { 
+        const email = req.params.email; 
+        // if(email !== req.decoded.email) { 
+        //    return res.status(403).send({ message: "unauthorized access"}); 
+        // }
+        const query = { email : email}; 
+        const user = await userCollection.findOne(query);  
+        let customer = false; 
+        if(user){
+          customer = user?.role === "customer";  
+        }
+        res.send({customer}); 
     })
 
     app.delete("/users/:id", verifyToken,  async (req, res) => {
@@ -192,12 +219,26 @@ app.get("/products", async (req, res) => {
   res.send(result); 
 });  
 
-app.get("/products/:id", verifyToken, async (req, res) => { 
+
+app.get("/products/:id", verifyToken,  async (req, res) => { 
   const id = req.params.id; 
   const query = { _id: new ObjectId(id) };
   const result = await productCollection.findOne(query);  
   res.send(result); 
 })
+
+
+app.get("/updateproducts/:category", verifyToken, verifyAdmin, async (req, res) => {   
+  const category = req.params.category;    
+ const query = {  
+     category: category 
+ }
+  console.log(category);     
+  const cursor = productCollection.find(query);         
+  const result = await cursor.toArray();  
+  res.send(result);   
+});
+
 
 app.patch("/products/:id", async (req, res) => {
   const item = req.body; 
@@ -239,7 +280,7 @@ app.post("/carts", async (req, res) => {
   res.send(result);
 });
 
-app.get("/carts", async (req, res) => {
+app.get("/carts", async (req, res) => { 
   const email = req.query.email;
   const query = { email: email };
   const result = await cartCollection.find(query).toArray();    
@@ -262,14 +303,8 @@ app.post("/subscription", async (req, res) => {
   res.send(result);
 });
 
-// app.get("/carts", async (req, res) => { 
-//   const email = req.query.email; 
-//   const query = { email: email };   
-//   const result = await subscriptionCollection.find(query).toArray();    
-//   res.send(result);    
-// });
 
-app.get("/subscription", async (req, res) => {
+app.get("/subscription", verifyToken, async (req, res) => {
   try {
     const email = req.query.email;
     const query = { email: email };
@@ -293,9 +328,16 @@ app.get("/subscription", async (req, res) => {
     res.send(modifiedResult);
   } catch (error) {
     console.error('Error fetching subscription details:', error);
-    res.status(500).send({ error: 'Internal Server Error' });
+    res.status(500).send({ error: 'Internal Server Error' }); 
   }
 }); 
+
+app.get("/subscriptionIncome", async(req, res) => {
+  const result = await subscriptionCollection.find().toArray(); 
+  res.send(result);  
+})
+
+
 
 // payment related api 
 
@@ -336,12 +378,25 @@ app.post("/payments", async (req, res) => {
 
 })
 
+// customer payment related api
 
 
+app.post("/customerPayments", async (req, res) => {
+  const customerPayment = req.body; 
+  const customerPaymentResult = await customerPaymentCollection.insertOne(customerPayment); 
+  const query = {_id : { 
+     
+    $in : payment.cartIds.map(id => new ObjectId(id))  
+  }
+  }
+  const deleteResult = await customerPaymentCollection.deleteMany(query); 
+  res.send({customerPaymentResult, deleteResult}); 
+
+})
 
     // await client.connect();
     // await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
