@@ -11,11 +11,10 @@ const port = process.env.PORT || 5000;
 // middleawre
 app.use(cors({  
   origin: [, 
-  "https://65680777d4d40f55f634714c--celebrated-cajeta-8cc0fc.netlify.app",
   "https://celebrated-cajeta-8cc0fc.netlify.app",   
   "https://inventory-management-a4af1.web.app",
   "http://localhost:5173",  
- ,
+ 
 ],      
   credentials : true    
 }));
@@ -101,11 +100,12 @@ async function run() {
       //    return res.status(403).send({ message: "forbidden access"});   
       // }
       next();    
- }
- 
+ } 
+
   // user related api
      app.post("/users", async (req, res) => {
-       const user = req.body; 
+       const body = req.body;  
+       const user = {...body, role: "customer"}      
        const query = { email: user?.email };  
        const existingUser = await userCollection.findOne(query);  
        if (existingUser) { 
